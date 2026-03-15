@@ -1,5 +1,4 @@
-export { getDb, closeDb } from './connection';
-export { seedDatabase } from './seed';
+export { getSupabase } from './connection';
 export { customerRepository } from './repositories/customer.repository';
 export { billingRepository } from './repositories/billing.repository';
 export { ticketRepository } from './repositories/ticket.repository';

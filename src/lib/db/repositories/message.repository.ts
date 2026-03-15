@@ -1,4 +1,4 @@
-import { getDb } from '../connection';
+import { getSupabase } from '../connection';
 
 export interface Message {
   readonly id: number;
@@ -10,18 +10,28 @@ export interface Message {
 }
 
 export const messageRepository = {
-  findByConversationId(conversationId: number): Message[] {
-    const db = getDb();
-    return db.prepare(
-      'SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC'
-    ).all(conversationId) as Message[];
+  async findByConversationId(conversationId: number): Promise<Message[]> {
+    const { data, error } = await getSupabase()
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  create(data: { conversation_id: number; role: Message['role']; content: string; tool_call?: string }): Message {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO messages (conversation_id, role, content, tool_call) VALUES (?, ?, ?, ?)'
-    ).run(data.conversation_id, data.role, data.content, data.tool_call || null);
-    return db.prepare('SELECT * FROM messages WHERE id = ?').get(result.lastInsertRowid) as Message;
+  async create(data: { conversation_id: number; role: Message['role']; content: string; tool_call?: string }): Promise<Message> {
+    const { data: created, error } = await getSupabase()
+      .from('messages')
+      .insert({
+        conversation_id: data.conversation_id,
+        role: data.role,
+        content: data.content,
+        tool_call: data.tool_call || null,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return created;
   },
 };

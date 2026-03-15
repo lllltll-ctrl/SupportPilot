@@ -1,8 +1,5 @@
 import { NextRequest } from 'next/server';
 import { customerRepository } from '@/lib/db/repositories/customer.repository';
-import { seedDatabase } from '@/lib/db/seed';
-
-seedDatabase();
 
 export async function GET(req: NextRequest) {
   try {
@@ -10,14 +7,14 @@ export async function GET(req: NextRequest) {
     const email = searchParams.get('email');
 
     if (email) {
-      const customer = customerRepository.findByEmail(email);
+      const customer = await customerRepository.findByEmail(email);
       if (!customer) {
         return Response.json({ error: 'Customer not found' }, { status: 404 });
       }
       return Response.json({ customer });
     }
 
-    const customers = customerRepository.findAll();
+    const customers = await customerRepository.findAll();
     return Response.json({ customers });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

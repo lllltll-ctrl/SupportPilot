@@ -1,13 +1,10 @@
 import { NextRequest } from 'next/server';
 import { actionLogRepository } from '@/lib/db/repositories/action-log.repository';
 import { executeConfirmedAction, rejectAction } from '@/lib/ai/tool-executor';
-import { seedDatabase } from '@/lib/db/seed';
-
-seedDatabase();
 
 export async function GET() {
   try {
-    const pending = actionLogRepository.findPending();
+    const pending = await actionLogRepository.findPending();
     return Response.json({ actions: pending });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -24,8 +21,8 @@ export async function POST(req: NextRequest) {
     }
 
     const result = decision === 'approved'
-      ? executeConfirmedAction(actionId)
-      : rejectAction(actionId);
+      ? await executeConfirmedAction(actionId)
+      : await rejectAction(actionId);
 
     return Response.json(result);
   } catch (error) {

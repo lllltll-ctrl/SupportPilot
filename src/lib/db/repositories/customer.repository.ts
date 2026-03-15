@@ -1,4 +1,4 @@
-import { getDb } from '../connection';
+import { getSupabase } from '../connection';
 
 export interface Customer {
   readonly id: number;
@@ -10,32 +10,53 @@ export interface Customer {
 }
 
 export const customerRepository = {
-  findByEmail(email: string): Customer | undefined {
-    const db = getDb();
-    return db.prepare('SELECT * FROM customers WHERE email = ?').get(email) as Customer | undefined;
+  async findByEmail(email: string): Promise<Customer | undefined> {
+    const { data, error } = await getSupabase()
+      .from('customers')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? undefined;
   },
 
-  findById(id: number): Customer | undefined {
-    const db = getDb();
-    return db.prepare('SELECT * FROM customers WHERE id = ?').get(id) as Customer | undefined;
+  async findById(id: number): Promise<Customer | undefined> {
+    const { data, error } = await getSupabase()
+      .from('customers')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? undefined;
   },
 
-  findAll(): Customer[] {
-    const db = getDb();
-    return db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all() as Customer[];
+  async findAll(): Promise<Customer[]> {
+    const { data, error } = await getSupabase()
+      .from('customers')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  create(data: Omit<Customer, 'id' | 'created_at'>): Customer {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO customers (name, email, plan_tier, account_status) VALUES (?, ?, ?, ?)'
-    ).run(data.name, data.email, data.plan_tier, data.account_status);
-    return { ...data, id: result.lastInsertRowid as number, created_at: new Date().toISOString() };
+  async create(data: Omit<Customer, 'id' | 'created_at'>): Promise<Customer> {
+    const { data: created, error } = await getSupabase()
+      .from('customers')
+      .insert(data)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return created;
   },
 
-  updatePlan(id: number, newPlan: 'free' | 'pro' | 'enterprise'): Customer | undefined {
-    const db = getDb();
-    db.prepare('UPDATE customers SET plan_tier = ? WHERE id = ?').run(newPlan, id);
-    return this.findById(id);
+  async updatePlan(id: number, newPlan: 'free' | 'pro' | 'enterprise'): Promise<Customer | undefined> {
+    const { data, error } = await getSupabase()
+      .from('customers')
+      .update({ plan_tier: newPlan })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
   },
 };

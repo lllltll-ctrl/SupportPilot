@@ -1,8 +1,5 @@
 import { NextRequest } from 'next/server';
 import { executeConfirmedAction, rejectAction } from '@/lib/ai/tool-executor';
-import { seedDatabase } from '@/lib/db/seed';
-
-seedDatabase();
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,8 +10,8 @@ export async function POST(req: NextRequest) {
     }
 
     const result = confirmed
-      ? executeConfirmedAction(actionId)
-      : rejectAction(actionId);
+      ? await executeConfirmedAction(actionId)
+      : await rejectAction(actionId);
 
     return Response.json(result);
   } catch (error) {

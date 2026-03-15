@@ -1,18 +1,18 @@
 import { ticketRepository } from '@/lib/db/repositories/ticket.repository';
-import { seedDatabase } from '@/lib/db/seed';
-
-seedDatabase();
 
 export async function GET() {
   try {
-    const total = ticketRepository.getTotal();
-    const byStatus = ticketRepository.countByStatus();
-    const byCategory = ticketRepository.countByCategory();
-    const byPriority = ticketRepository.countByPriority();
-    const avgResolutionTime = ticketRepository.getAverageResolutionTime();
-    const recentTrend = ticketRepository.getRecentTrend(7);
-    const satisfactionScore = ticketRepository.getSatisfactionScore();
-    const trends = ticketRepository.getWeekOverWeekTrends();
+    const [total, byStatus, byCategory, byPriority, avgResolutionTime, recentTrend, satisfactionScore, trends] =
+      await Promise.all([
+        ticketRepository.getTotal(),
+        ticketRepository.countByStatus(),
+        ticketRepository.countByCategory(),
+        ticketRepository.countByPriority(),
+        ticketRepository.getAverageResolutionTime(),
+        ticketRepository.getRecentTrend(7),
+        ticketRepository.getSatisfactionScore(),
+        ticketRepository.getWeekOverWeekTrends(),
+      ]);
 
     const resolved = byStatus['resolved'] || 0;
     const aiResolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;

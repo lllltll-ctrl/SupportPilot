@@ -6,9 +6,6 @@ import { messageRepository } from '@/lib/db/repositories/message.repository';
 import { actionLogRepository } from '@/lib/db/repositories/action-log.repository';
 import { assembleCustomerContext } from '@/lib/ai/context-assembler';
 import { customerRepository } from '@/lib/db/repositories/customer.repository';
-import { seedDatabase } from '@/lib/db/seed';
-
-seedDatabase();
 
 export async function GET(
   _req: NextRequest,
@@ -18,19 +15,22 @@ export async function GET(
     const { id } = await params;
     const ticketId = Number(id);
 
-    const ticket = ticketRepository.findById(ticketId);
+    const ticket = await ticketRepository.findById(ticketId);
     if (!ticket) {
       return Response.json({ error: 'Ticket not found' }, { status: 404 });
     }
 
-    const conversation = conversationRepository.findByTicketId(ticketId);
-    const messages = conversation
-      ? messageRepository.findByConversationId(conversation.id)
-      : [];
-    const actions = actionLogRepository.findByTicketId(ticketId);
+    const [conversation, actions, customer] = await Promise.all([
+      conversationRepository.findByTicketId(ticketId),
+      actionLogRepository.findByTicketId(ticketId),
+      customerRepository.findById(ticket.customer_id),
+    ]);
 
-    const customer = customerRepository.findById(ticket.customer_id);
-    const customerContext = customer ? assembleCustomerContext(customer) : '';
+    const messages = conversation
+      ? await messageRepository.findByConversationId(conversation.id)
+      : [];
+
+    const customerContext = customer ? await assembleCustomerContext(customer) : '';
 
     const conversationText = messages
       .map((m) => `${m.role}: ${m.content}`)

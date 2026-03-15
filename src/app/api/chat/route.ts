@@ -4,14 +4,10 @@ import { AI_TOOLS } from '@/lib/ai/tools';
 import { executeTool } from '@/lib/ai/tool-executor';
 import { buildSystemPrompt } from '@/lib/ai/system-prompt';
 import { assembleCustomerContext, findCustomerByEmail } from '@/lib/ai/context-assembler';
-import { seedDatabase } from '@/lib/db/seed';
 import { ticketRepository } from '@/lib/db/repositories/ticket.repository';
 import { conversationRepository } from '@/lib/db/repositories/conversation.repository';
 import { messageRepository } from '@/lib/db/repositories/message.repository';
 import type Anthropic from '@anthropic-ai/sdk';
-
-// Ensure DB is seeded
-seedDatabase();
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +19,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Find customer
-    const customer = findCustomerByEmail(customerEmail);
+    const customer = await findCustomerByEmail(customerEmail);
     if (!customer) {
       return Response.json({ error: 'Customer not found' }, { status: 404 });
     }
@@ -33,44 +29,42 @@ export async function POST(req: NextRequest) {
     let ticketId: number | null = null;
 
     if (!convId) {
-      const ticket = ticketRepository.create({
+      const ticket = await ticketRepository.create({
         customer_id: customer.id,
         subject: message.slice(0, 100),
       });
       ticketId = ticket.id;
-      // Immediately set to in_progress since a conversation has started
-      ticketRepository.updateStatus(ticketId, 'in_progress');
+      await ticketRepository.updateStatus(ticketId, 'in_progress');
 
-      const conversation = conversationRepository.create(ticket.id, customer.id);
+      const conversation = await conversationRepository.create(ticket.id, customer.id);
       convId = conversation.id;
     } else {
-      const conv = conversationRepository.findById(convId);
+      const conv = await conversationRepository.findById(convId);
       if (conv) {
         ticketId = conv.ticket_id;
-        // Re-open resolved tickets when customer sends a new message
-        const ticket = ticketRepository.findById(ticketId);
+        const ticket = await ticketRepository.findById(ticketId);
         if (ticket && ticket.status === 'resolved') {
-          ticketRepository.updateStatus(ticketId, 'in_progress');
+          await ticketRepository.updateStatus(ticketId, 'in_progress');
         }
       }
     }
 
     // Save customer message
-    messageRepository.create({
+    await messageRepository.create({
       conversation_id: convId,
       role: 'customer',
       content: message,
     });
 
     // Build message history from DB
-    const dbMessages = messageRepository.findByConversationId(convId);
+    const dbMessages = await messageRepository.findByConversationId(convId);
     const anthropicMessages: Anthropic.MessageParam[] = dbMessages.map(m => ({
       role: m.role === 'customer' ? 'user' as const : 'assistant' as const,
       content: m.content,
     }));
 
     // Build context
-    const customerContext = assembleCustomerContext(customer);
+    const customerContext = await assembleCustomerContext(customer);
     const systemPrompt = buildSystemPrompt(customerContext);
 
     // Create SSE stream with real token-by-token streaming
@@ -91,7 +85,6 @@ export async function POST(req: NextRequest) {
           const isFirstMessage = dbMessages.length <= 1;
 
           while (continueLoop) {
-            // Use streaming API for real token-by-token delivery
             const streamResponse = client.messages.stream({
               model: getModelId(),
               max_tokens: 4096,
@@ -100,24 +93,20 @@ export async function POST(req: NextRequest) {
               messages,
             });
 
-            // Stream text deltas to client in real time
             streamResponse.on('text', (textDelta) => {
               fullResponse += textDelta;
               sendEvent('text', { text: textDelta });
             });
 
-            // Notify client when a tool starts being invoked
             streamResponse.on('contentBlock', (block) => {
               if (block.type === 'tool_use') {
                 sendEvent('tool_use', { tool: block.name, input: block.input });
               }
             });
 
-            // Wait for the full message to resolve (needed for tool execution)
             const finalMessage = await streamResponse.finalMessage();
             continueLoop = false;
 
-            // Collect all tool_use blocks and execute them
             const toolUseBlocks = finalMessage.content.filter(b => b.type === 'tool_use');
 
             if (toolUseBlocks.length > 0) {
@@ -128,7 +117,7 @@ export async function POST(req: NextRequest) {
                 const toolName = block.name;
                 const toolInput = block.input as Record<string, unknown>;
 
-                const toolResult = executeTool(toolName, toolInput, ticketId);
+                const toolResult = await executeTool(toolName, toolInput, ticketId);
 
                 if (toolResult.requiresConfirmation) {
                   sendEvent('action_confirmation', {
@@ -151,7 +140,6 @@ export async function POST(req: NextRequest) {
                 });
               }
 
-              // Send ALL tool results in a single user message
               messages = [
                 ...messages,
                 {
@@ -176,7 +164,7 @@ export async function POST(req: NextRequest) {
 
           // Save AI response
           if (fullResponse) {
-            messageRepository.create({
+            await messageRepository.create({
               conversation_id: convId,
               role: 'ai',
               content: fullResponse,
@@ -217,7 +205,7 @@ export async function POST(req: NextRequest) {
 function classifyTicketAsync(client: Anthropic, convId: number, ticketId: number): void {
   (async () => {
     try {
-      const allMessages = messageRepository.findByConversationId(convId);
+      const allMessages = await messageRepository.findByConversationId(convId);
       const conversationText = allMessages
         .map(m => `${m.role}: ${m.content}`)
         .join('\n');
@@ -240,16 +228,16 @@ function classifyTicketAsync(client: Anthropic, convId: number, ticketId: number
       if (jsonMatch) {
         const classification = JSON.parse(jsonMatch[0]);
         if (classification.summary) {
-          ticketRepository.updateSummary(ticketId, classification.summary);
+          await ticketRepository.updateSummary(ticketId, classification.summary);
         }
         if (classification.category) {
-          ticketRepository.updateCategory(ticketId, classification.category);
+          await ticketRepository.updateCategory(ticketId, classification.category);
         }
         if (classification.priority) {
-          ticketRepository.updatePriority(ticketId, classification.priority);
+          await ticketRepository.updatePriority(ticketId, classification.priority);
         }
         if (classification.sentiment && classification.frustration_score !== undefined) {
-          ticketRepository.updateSentiment(ticketId, classification.sentiment, classification.frustration_score);
+          await ticketRepository.updateSentiment(ticketId, classification.sentiment, classification.frustration_score);
         }
       }
     } catch {

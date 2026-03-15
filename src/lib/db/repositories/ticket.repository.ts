@@ -1,4 +1,4 @@
-import { getDb } from '../connection';
+import { getSupabase } from '../connection';
 
 export interface Ticket {
   readonly id: number;
@@ -23,236 +23,194 @@ export interface TicketWithCustomer extends Ticket {
 }
 
 export const ticketRepository = {
-  findAll(filters?: { status?: string; priority?: string; category?: string; limit?: number; offset?: number }): TicketWithCustomer[] {
-    const db = getDb();
-    const conditions: string[] = [];
-    const params: (string | number)[] = [];
-
-    if (filters?.status) { conditions.push('t.status = ?'); params.push(filters.status); }
-    if (filters?.priority) { conditions.push('t.priority = ?'); params.push(filters.priority); }
-    if (filters?.category) { conditions.push('t.category = ?'); params.push(filters.category); }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  async findAll(filters?: { status?: string; priority?: string; category?: string; limit?: number; offset?: number }): Promise<TicketWithCustomer[]> {
     const limit = filters?.limit || 50;
     const offset = filters?.offset || 0;
 
-    return db.prepare(`
-      SELECT t.*, c.name as customer_name, c.email as customer_email, c.plan_tier as customer_plan
-      FROM tickets t
-      JOIN customers c ON t.customer_id = c.id
-      ${where}
-      ORDER BY
-        CASE t.priority
-          WHEN 'critical' THEN 1
-          WHEN 'high' THEN 2
-          WHEN 'medium' THEN 3
-          WHEN 'low' THEN 4
-        END,
-        t.created_at DESC
-      LIMIT ? OFFSET ?
-    `).all(...params, limit, offset) as TicketWithCustomer[];
+    let query = getSupabase()
+      .from('tickets_with_customer')
+      .select('*');
+
+    if (filters?.status) query = query.eq('status', filters.status);
+    if (filters?.priority) query = query.eq('priority', filters.priority);
+    if (filters?.category) query = query.eq('category', filters.category);
+
+    const { data, error } = await query
+      .order('priority_order', { ascending: true })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw new Error(error.message);
+    return (data ?? []) as TicketWithCustomer[];
   },
 
-  findById(id: number): TicketWithCustomer | undefined {
-    const db = getDb();
-    return db.prepare(`
-      SELECT t.*, c.name as customer_name, c.email as customer_email, c.plan_tier as customer_plan
-      FROM tickets t
-      JOIN customers c ON t.customer_id = c.id
-      WHERE t.id = ?
-    `).get(id) as TicketWithCustomer | undefined;
+  async findById(id: number): Promise<TicketWithCustomer | undefined> {
+    const { data, error } = await getSupabase()
+      .from('tickets_with_customer')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data as TicketWithCustomer) ?? undefined;
   },
 
-  findByCustomerId(customerId: number, limit = 10): Ticket[] {
-    const db = getDb();
-    return db.prepare(
-      'SELECT * FROM tickets WHERE customer_id = ? ORDER BY created_at DESC LIMIT ?'
-    ).all(customerId, limit) as Ticket[];
+  async findByCustomerId(customerId: number, limit = 10): Promise<Ticket[]> {
+    const { data, error } = await getSupabase()
+      .from('tickets')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  create(data: { customer_id: number; subject: string; priority?: string; category?: string }): Ticket {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO tickets (customer_id, subject, priority, category) VALUES (?, ?, ?, ?)'
-    ).run(data.customer_id, data.subject, data.priority || 'medium', data.category || null);
-    return db.prepare('SELECT * FROM tickets WHERE id = ?').get(result.lastInsertRowid) as Ticket;
+  async create(data: { customer_id: number; subject: string; priority?: string; category?: string }): Promise<Ticket> {
+    const { data: created, error } = await getSupabase()
+      .from('tickets')
+      .insert({
+        customer_id: data.customer_id,
+        subject: data.subject,
+        priority: data.priority || 'medium',
+        category: data.category || null,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return created;
   },
 
-  updateStatus(id: number, status: Ticket['status']): void {
-    const db = getDb();
-    const resolvedAt = status === 'resolved' ? new Date().toISOString() : null;
-    db.prepare('UPDATE tickets SET status = ?, resolved_at = COALESCE(?, resolved_at) WHERE id = ?')
-      .run(status, resolvedAt, id);
+  async updateStatus(id: number, status: Ticket['status']): Promise<void> {
+    const updateData: Record<string, unknown> = { status };
+    if (status === 'resolved') {
+      updateData.resolved_at = new Date().toISOString();
+    }
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update(updateData)
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  updateSummary(id: number, summary: string): void {
-    const db = getDb();
-    db.prepare('UPDATE tickets SET ai_summary = ? WHERE id = ?').run(summary, id);
+  async updateSummary(id: number, summary: string): Promise<void> {
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update({ ai_summary: summary })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  updatePriority(id: number, priority: Ticket['priority']): void {
-    const db = getDb();
-    db.prepare('UPDATE tickets SET priority = ? WHERE id = ?').run(priority, id);
+  async updatePriority(id: number, priority: Ticket['priority']): Promise<void> {
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update({ priority })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  updateCategory(id: number, category: string): void {
-    const db = getDb();
-    db.prepare('UPDATE tickets SET category = ? WHERE id = ?').run(category, id);
+  async updateCategory(id: number, category: string): Promise<void> {
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update({ category })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  assignAgent(id: number, agentId: string | null): void {
-    const db = getDb();
-    db.prepare('UPDATE tickets SET assigned_agent_id = ? WHERE id = ?').run(agentId, id);
+  async assignAgent(id: number, agentId: string | null): Promise<void> {
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update({ assigned_agent_id: agentId })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  updateSatisfaction(id: number, rating: number): void {
-    const db = getDb();
-    db.prepare('UPDATE tickets SET satisfaction_rating = ? WHERE id = ?').run(rating, id);
+  async updateSatisfaction(id: number, rating: number): Promise<void> {
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update({ satisfaction_rating: rating })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  updateSentiment(id: number, sentiment: 'positive' | 'neutral' | 'negative', frustrationScore: number): void {
-    const db = getDb();
-    db.prepare('UPDATE tickets SET sentiment = ?, frustration_score = ? WHERE id = ?')
-      .run(sentiment, frustrationScore, id);
+  async updateSentiment(id: number, sentiment: 'positive' | 'neutral' | 'negative', frustrationScore: number): Promise<void> {
+    const { error } = await getSupabase()
+      .from('tickets')
+      .update({ sentiment, frustration_score: frustrationScore })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 
-  countByStatus(): Record<string, number> {
-    const db = getDb();
-    const rows = db.prepare('SELECT status, COUNT(*) as count FROM tickets GROUP BY status').all() as { status: string; count: number }[];
-    return Object.fromEntries(rows.map(r => [r.status, r.count]));
+  async countByStatus(): Promise<Record<string, number>> {
+    const { data, error } = await getSupabase()
+      .from('tickets')
+      .select('status');
+    if (error) throw new Error(error.message);
+    const counts: Record<string, number> = {};
+    for (const row of data ?? []) {
+      counts[row.status] = (counts[row.status] || 0) + 1;
+    }
+    return counts;
   },
 
-  countByCategory(): Record<string, number> {
-    const db = getDb();
-    const rows = db.prepare('SELECT category, COUNT(*) as count FROM tickets WHERE category IS NOT NULL GROUP BY category').all() as { category: string; count: number }[];
-    return Object.fromEntries(rows.map(r => [r.category, r.count]));
+  async countByCategory(): Promise<Record<string, number>> {
+    const { data, error } = await getSupabase()
+      .from('tickets')
+      .select('category')
+      .not('category', 'is', null);
+    if (error) throw new Error(error.message);
+    const counts: Record<string, number> = {};
+    for (const row of data ?? []) {
+      counts[row.category] = (counts[row.category] || 0) + 1;
+    }
+    return counts;
   },
 
-  countByPriority(): Record<string, number> {
-    const db = getDb();
-    const rows = db.prepare('SELECT priority, COUNT(*) as count FROM tickets GROUP BY priority').all() as { priority: string; count: number }[];
-    return Object.fromEntries(rows.map(r => [r.priority, r.count]));
+  async countByPriority(): Promise<Record<string, number>> {
+    const { data, error } = await getSupabase()
+      .from('tickets')
+      .select('priority');
+    if (error) throw new Error(error.message);
+    const counts: Record<string, number> = {};
+    for (const row of data ?? []) {
+      counts[row.priority] = (counts[row.priority] || 0) + 1;
+    }
+    return counts;
   },
 
-  getAverageResolutionTime(): number {
-    const db = getDb();
-    const result = db.prepare(`
-      SELECT AVG(
-        (julianday(resolved_at) - julianday(created_at)) * 24 * 60
-      ) as avg_minutes
-      FROM tickets
-      WHERE resolved_at IS NOT NULL
-    `).get() as { avg_minutes: number | null };
-    return result.avg_minutes || 0;
+  async getAverageResolutionTime(): Promise<number> {
+    const { data, error } = await getSupabase().rpc('get_avg_resolution_time');
+    if (error) throw new Error(error.message);
+    return data ?? 0;
   },
 
-  getTotal(): number {
-    const db = getDb();
-    const result = db.prepare('SELECT COUNT(*) as count FROM tickets').get() as { count: number };
-    return result.count;
+  async getTotal(): Promise<number> {
+    const { count, error } = await getSupabase()
+      .from('tickets')
+      .select('*', { count: 'exact', head: true });
+    if (error) throw new Error(error.message);
+    return count ?? 0;
   },
 
-  getRecentTrend(days = 7): { date: string; tickets: number; resolved: number }[] {
-    const db = getDb();
-    const rows = db.prepare(`
-      WITH RECURSIVE dates(d) AS (
-        SELECT date('now', '-' || ? || ' days')
-        UNION ALL
-        SELECT date(d, '+1 day') FROM dates WHERE d < date('now')
-      )
-      SELECT
-        dates.d as date,
-        COALESCE(SUM(CASE WHEN date(t.created_at) = dates.d THEN 1 ELSE 0 END), 0) as tickets,
-        COALESCE(SUM(CASE WHEN date(t.resolved_at) = dates.d THEN 1 ELSE 0 END), 0) as resolved
-      FROM dates
-      LEFT JOIN tickets t ON date(t.created_at) = dates.d OR date(t.resolved_at) = dates.d
-      GROUP BY dates.d
-      ORDER BY dates.d
-    `).all(days - 1) as { date: string; tickets: number; resolved: number }[];
-    return rows;
+  async getRecentTrend(days = 7): Promise<{ date: string; tickets: number; resolved: number }[]> {
+    const { data, error } = await getSupabase().rpc('get_recent_trend', { p_days: days });
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  /** Compare this week vs last week for trend percentages */
-  getWeekOverWeekTrends(): {
+  async getWeekOverWeekTrends(): Promise<{
     ticketsTrend: number;
     resolutionRateTrend: number;
     resolutionTimeTrend: number;
     satisfactionTrend: number;
-  } {
-    const db = getDb();
-
-    const thisWeek = db.prepare(`
-      SELECT
-        COUNT(*) as total,
-        COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved,
-        AVG(CASE WHEN resolved_at IS NOT NULL
-          THEN (julianday(resolved_at) - julianday(created_at)) * 24 * 60
-          ELSE NULL END) as avg_minutes
-      FROM tickets
-      WHERE created_at >= date('now', '-7 days')
-    `).get() as { total: number; resolved: number; avg_minutes: number | null };
-
-    const lastWeek = db.prepare(`
-      SELECT
-        COUNT(*) as total,
-        COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved,
-        AVG(CASE WHEN resolved_at IS NOT NULL
-          THEN (julianday(resolved_at) - julianday(created_at)) * 24 * 60
-          ELSE NULL END) as avg_minutes
-      FROM tickets
-      WHERE created_at >= date('now', '-14 days') AND created_at < date('now', '-7 days')
-    `).get() as { total: number; resolved: number; avg_minutes: number | null };
-
-    const pctChange = (curr: number, prev: number): number => {
-      if (prev === 0) return curr > 0 ? 100 : 0;
-      return Math.round(((curr - prev) / prev) * 100);
-    };
-
-    const thisRate = thisWeek.total > 0 ? thisWeek.resolved / thisWeek.total : 0;
-    const lastRate = lastWeek.total > 0 ? lastWeek.resolved / lastWeek.total : 0;
-
-    return {
-      ticketsTrend: pctChange(thisWeek.total, lastWeek.total),
-      resolutionRateTrend: pctChange(thisRate * 100, lastRate * 100),
-      resolutionTimeTrend: pctChange(
-        lastWeek.avg_minutes || 0,
-        thisWeek.avg_minutes || 0
-      ), // inverted: faster is positive
-      satisfactionTrend: pctChange(thisRate * 100, lastRate * 100),
-    };
+  }> {
+    const { data, error } = await getSupabase().rpc('get_week_over_week_trends');
+    if (error) throw new Error(error.message);
+    return data ?? { ticketsTrend: 0, resolutionRateTrend: 0, resolutionTimeTrend: 0, satisfactionTrend: 0 };
   },
 
-  getSatisfactionScore(): number {
-    const db = getDb();
-
-    // Use real CSAT ratings when available
-    const ratings = db.prepare(`
-      SELECT AVG(satisfaction_rating) as avg_rating, COUNT(satisfaction_rating) as rated_count
-      FROM tickets
-      WHERE satisfaction_rating IS NOT NULL
-    `).get() as { avg_rating: number | null; rated_count: number };
-
-    if (ratings.rated_count >= 3 && ratings.avg_rating !== null) {
-      return Math.round(ratings.avg_rating * 10) / 10;
-    }
-
-    // Fallback: estimate from resolution metrics when insufficient ratings
-    const result = db.prepare(`
-      SELECT
-        COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved,
-        COUNT(*) as total,
-        AVG(CASE
-          WHEN resolved_at IS NOT NULL
-          THEN (julianday(resolved_at) - julianday(created_at)) * 24 * 60
-          ELSE NULL
-        END) as avg_resolution_minutes
-      FROM tickets
-    `).get() as { resolved: number; total: number; avg_resolution_minutes: number | null };
-
-    const resolutionRate = result.total > 0 ? result.resolved / result.total : 0;
-    const avgMinutes = result.avg_resolution_minutes || 60;
-    const speedBonus = Math.max(0, 1.0 - (avgMinutes / 120));
-    const score = 3.0 + resolutionRate * 1.0 + speedBonus;
-    return Math.round(Math.min(score, 5.0) * 10) / 10;
+  async getSatisfactionScore(): Promise<number> {
+    const { data, error } = await getSupabase().rpc('get_satisfaction_score');
+    if (error) throw new Error(error.message);
+    return data ?? 0;
   },
 };

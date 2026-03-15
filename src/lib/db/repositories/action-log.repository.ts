@@ -1,4 +1,4 @@
-import { getDb } from '../connection';
+import { getSupabase } from '../connection';
 
 export interface ActionLog {
   readonly id: number;
@@ -11,47 +11,63 @@ export interface ActionLog {
 }
 
 export const actionLogRepository = {
-  findByTicketId(ticketId: number): ActionLog[] {
-    const db = getDb();
-    return db.prepare(
-      'SELECT * FROM actions_log WHERE ticket_id = ? ORDER BY created_at DESC'
-    ).all(ticketId) as ActionLog[];
+  async findByTicketId(ticketId: number): Promise<ActionLog[]> {
+    const { data, error } = await getSupabase()
+      .from('actions_log')
+      .select('*')
+      .eq('ticket_id', ticketId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  findById(id: number): ActionLog | undefined {
-    const db = getDb();
-    return db.prepare('SELECT * FROM actions_log WHERE id = ?').get(id) as ActionLog | undefined;
+  async findById(id: number): Promise<ActionLog | undefined> {
+    const { data, error } = await getSupabase()
+      .from('actions_log')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? undefined;
   },
 
-  findPending(): ActionLog[] {
-    const db = getDb();
-    return db.prepare(
-      'SELECT * FROM actions_log WHERE status = \'proposed\' ORDER BY created_at DESC'
-    ).all() as ActionLog[];
+  async findPending(): Promise<ActionLog[]> {
+    const { data, error } = await getSupabase()
+      .from('actions_log')
+      .select('*')
+      .eq('status', 'proposed')
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  create(data: {
+  async create(data: {
     ticket_id: number;
     action_type: ActionLog['action_type'];
     parameters: Record<string, unknown>;
     status?: ActionLog['status'];
     ai_reasoning?: string;
-  }): ActionLog {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO actions_log (ticket_id, action_type, parameters, status, ai_reasoning) VALUES (?, ?, ?, ?, ?)'
-    ).run(
-      data.ticket_id,
-      data.action_type,
-      JSON.stringify(data.parameters),
-      data.status || 'proposed',
-      data.ai_reasoning || null
-    );
-    return db.prepare('SELECT * FROM actions_log WHERE id = ?').get(result.lastInsertRowid) as ActionLog;
+  }): Promise<ActionLog> {
+    const { data: created, error } = await getSupabase()
+      .from('actions_log')
+      .insert({
+        ticket_id: data.ticket_id,
+        action_type: data.action_type,
+        parameters: JSON.stringify(data.parameters),
+        status: data.status || 'proposed',
+        ai_reasoning: data.ai_reasoning || null,
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return created;
   },
 
-  updateStatus(id: number, status: ActionLog['status']): void {
-    const db = getDb();
-    db.prepare('UPDATE actions_log SET status = ? WHERE id = ?').run(status, id);
+  async updateStatus(id: number, status: ActionLog['status']): Promise<void> {
+    const { error } = await getSupabase()
+      .from('actions_log')
+      .update({ status })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 };

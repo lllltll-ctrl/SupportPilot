@@ -12,41 +12,41 @@ interface ToolExecutionResult {
   readonly actionDescription?: string;
 }
 
-export function executeTool(
+export async function executeTool(
   toolName: string,
   toolInput: Record<string, unknown>,
   ticketId: number | null
-): ToolExecutionResult {
+): Promise<ToolExecutionResult> {
   switch (toolName) {
     case 'lookup_customer': {
       const email = toolInput.email as string | undefined;
       const customerId = toolInput.customer_id as number | undefined;
 
       const customer = email
-        ? customerRepository.findByEmail(email)
+        ? await customerRepository.findByEmail(email)
         : customerId
-        ? customerRepository.findById(customerId)
+        ? await customerRepository.findById(customerId)
         : undefined;
 
       if (!customer) {
         return { result: { error: 'Customer not found' }, requiresConfirmation: false };
       }
 
-      const context = assembleCustomerContext(customer);
+      const context = await assembleCustomerContext(customer);
       return { result: { customer, context }, requiresConfirmation: false };
     }
 
     case 'get_billing_history': {
       const customerId = toolInput.customer_id as number;
       const limit = (toolInput.limit as number) || 20;
-      const billing = billingRepository.findByCustomerId(customerId, limit);
+      const billing = await billingRepository.findByCustomerId(customerId, limit);
       return { result: { billing, total: billing.length }, requiresConfirmation: false };
     }
 
     case 'get_past_tickets': {
       const customerId = toolInput.customer_id as number;
       const limit = (toolInput.limit as number) || 10;
-      const tickets = ticketRepository.findByCustomerId(customerId, limit);
+      const tickets = await ticketRepository.findByCustomerId(customerId, limit);
       return { result: { tickets, total: tickets.length }, requiresConfirmation: false };
     }
 
@@ -56,7 +56,7 @@ export function executeTool(
       const reason = toolInput.reason as string;
 
       if (CONFIRMATION_REQUIRED_TOOLS.has(toolName) && ticketId) {
-        const action = actionLogRepository.create({
+        const action = await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'refund',
           parameters: { customer_id: customerId, amount, reason },
@@ -72,9 +72,9 @@ export function executeTool(
         };
       }
 
-      const refund = billingRepository.createRefund(customerId, amount, reason);
+      const refund = await billingRepository.createRefund(customerId, amount, reason);
       if (ticketId) {
-        actionLogRepository.create({
+        await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'refund',
           parameters: { customer_id: customerId, amount, reason },
@@ -87,14 +87,14 @@ export function executeTool(
 
     case 'reset_password': {
       const customerId = toolInput.customer_id as number;
-      const customer = customerRepository.findById(customerId);
+      const customer = await customerRepository.findById(customerId);
 
       if (!customer) {
         return { result: { error: 'Customer not found' }, requiresConfirmation: false };
       }
 
       if (CONFIRMATION_REQUIRED_TOOLS.has(toolName) && ticketId) {
-        const action = actionLogRepository.create({
+        const action = await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'password_reset',
           parameters: { customer_id: customerId, email: customer.email },
@@ -111,7 +111,7 @@ export function executeTool(
       }
 
       if (ticketId) {
-        actionLogRepository.create({
+        await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'password_reset',
           parameters: { customer_id: customerId, email: customer.email },
@@ -125,7 +125,7 @@ export function executeTool(
     case 'change_plan': {
       const customerId = toolInput.customer_id as number;
       const newPlan = toolInput.new_plan as 'free' | 'pro' | 'enterprise';
-      const customer = customerRepository.findById(customerId);
+      const customer = await customerRepository.findById(customerId);
 
       if (!customer) {
         return { result: { error: 'Customer not found' }, requiresConfirmation: false };
@@ -134,7 +134,7 @@ export function executeTool(
       const planPrices: Record<string, string> = { free: '$0', pro: '$9.99/mo', enterprise: '$49.99/mo' };
 
       if (CONFIRMATION_REQUIRED_TOOLS.has(toolName) && ticketId) {
-        const action = actionLogRepository.create({
+        const action = await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'plan_change',
           parameters: { customer_id: customerId, from: customer.plan_tier, to: newPlan },
@@ -150,9 +150,9 @@ export function executeTool(
         };
       }
 
-      customerRepository.updatePlan(customerId, newPlan);
+      await customerRepository.updatePlan(customerId, newPlan);
       if (ticketId) {
-        actionLogRepository.create({
+        await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'plan_change',
           parameters: { customer_id: customerId, from: customer.plan_tier, to: newPlan },
@@ -169,17 +169,16 @@ export function executeTool(
       const description = toolInput.description as string;
       const severity = toolInput.severity as string;
 
-      const bugTicket = ticketRepository.create({
+      const bugTicket = await ticketRepository.create({
         customer_id: customerId,
         subject: `[BUG] ${title}`,
         priority: severity as 'low' | 'medium' | 'high' | 'critical',
         category: 'bug',
       });
-      // Bug tickets are immediately in progress (filed for engineering)
-      ticketRepository.updateStatus(bugTicket.id, 'in_progress');
+      await ticketRepository.updateStatus(bugTicket.id, 'in_progress');
 
       if (ticketId) {
-        actionLogRepository.create({
+        await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'bug_ticket',
           parameters: { bug_ticket_id: bugTicket.id, title, description, severity },
@@ -196,8 +195,8 @@ export function executeTool(
       const contextSummary = toolInput.context_summary as string;
 
       if (ticketId) {
-        ticketRepository.updateStatus(ticketId, 'escalated');
-        actionLogRepository.create({
+        await ticketRepository.updateStatus(ticketId, 'escalated');
+        await actionLogRepository.create({
           ticket_id: ticketId,
           action_type: 'escalation',
           parameters: { reason, context_summary: contextSummary },
@@ -217,8 +216,8 @@ export function executeTool(
   }
 }
 
-export function executeConfirmedAction(actionId: number): { success: boolean; message: string } {
-  const action = actionLogRepository.findById(actionId);
+export async function executeConfirmedAction(actionId: number): Promise<{ success: boolean; message: string }> {
+  const action = await actionLogRepository.findById(actionId);
   if (!action) {
     return { success: false, message: 'Action not found' };
   }
@@ -237,19 +236,19 @@ export function executeConfirmedAction(actionId: number): { success: boolean; me
   switch (action.action_type) {
     case 'refund': {
       const amount = Number(params.amount);
-      billingRepository.createRefund(Number(params.customer_id), amount, String(params.reason));
-      actionLogRepository.updateStatus(actionId, 'executed');
+      await billingRepository.createRefund(Number(params.customer_id), amount, String(params.reason));
+      await actionLogRepository.updateStatus(actionId, 'executed');
       return { success: true, message: `Refund of $${amount.toFixed(2)} processed successfully.` };
     }
 
     case 'password_reset': {
-      actionLogRepository.updateStatus(actionId, 'executed');
+      await actionLogRepository.updateStatus(actionId, 'executed');
       return { success: true, message: `Password reset email sent to ${params.email}.` };
     }
 
     case 'plan_change': {
-      customerRepository.updatePlan(Number(params.customer_id), String(params.to) as 'free' | 'pro' | 'enterprise');
-      actionLogRepository.updateStatus(actionId, 'executed');
+      await customerRepository.updatePlan(Number(params.customer_id), String(params.to) as 'free' | 'pro' | 'enterprise');
+      await actionLogRepository.updateStatus(actionId, 'executed');
       return { success: true, message: `Plan changed from ${params.from} to ${params.to} successfully.` };
     }
 
@@ -258,11 +257,11 @@ export function executeConfirmedAction(actionId: number): { success: boolean; me
   }
 }
 
-export function rejectAction(actionId: number): { success: boolean; message: string } {
-  const action = actionLogRepository.findById(actionId);
+export async function rejectAction(actionId: number): Promise<{ success: boolean; message: string }> {
+  const action = await actionLogRepository.findById(actionId);
   if (!action) {
     return { success: false, message: 'Action not found' };
   }
-  actionLogRepository.updateStatus(actionId, 'rejected');
+  await actionLogRepository.updateStatus(actionId, 'rejected');
   return { success: true, message: 'Action rejected.' };
 }

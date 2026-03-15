@@ -1,4 +1,4 @@
-import { getDb } from '../connection';
+import { getSupabase } from '../connection';
 
 export interface Conversation {
   readonly id: number;
@@ -21,48 +21,50 @@ export interface ConversationWithDetails extends Conversation {
 }
 
 export const conversationRepository = {
-  findById(id: number): Conversation | undefined {
-    const db = getDb();
-    return db.prepare('SELECT * FROM conversations WHERE id = ?').get(id) as Conversation | undefined;
+  async findById(id: number): Promise<Conversation | undefined> {
+    const { data, error } = await getSupabase()
+      .from('conversations')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? undefined;
   },
 
-  findByTicketId(ticketId: number): Conversation | undefined {
-    const db = getDb();
-    return db.prepare('SELECT * FROM conversations WHERE ticket_id = ?').get(ticketId) as Conversation | undefined;
+  async findByTicketId(ticketId: number): Promise<Conversation | undefined> {
+    const { data, error } = await getSupabase()
+      .from('conversations')
+      .select('*')
+      .eq('ticket_id', ticketId)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? undefined;
   },
 
-  findActive(): ConversationWithDetails[] {
-    const db = getDb();
-    return db.prepare(`
-      SELECT
-        conv.*,
-        c.name as customer_name,
-        c.email as customer_email,
-        t.subject as ticket_subject,
-        t.status as ticket_status,
-        t.priority as ticket_priority,
-        t.sentiment as ticket_sentiment,
-        t.frustration_score as ticket_frustration_score,
-        (SELECT COUNT(*) FROM messages WHERE conversation_id = conv.id) as message_count,
-        (SELECT content FROM messages WHERE conversation_id = conv.id ORDER BY created_at DESC LIMIT 1) as last_message
-      FROM conversations conv
-      JOIN customers c ON conv.customer_id = c.id
-      JOIN tickets t ON conv.ticket_id = t.id
-      WHERE conv.ended_at IS NULL AND t.status IN ('in_progress', 'escalated')
-      ORDER BY conv.started_at DESC
-    `).all() as ConversationWithDetails[];
+  async findActive(): Promise<ConversationWithDetails[]> {
+    const { data, error } = await getSupabase()
+      .from('active_conversations')
+      .select('*')
+      .order('started_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ConversationWithDetails[];
   },
 
-  create(ticketId: number, customerId: number): Conversation {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO conversations (ticket_id, customer_id) VALUES (?, ?)'
-    ).run(ticketId, customerId);
-    return db.prepare('SELECT * FROM conversations WHERE id = ?').get(result.lastInsertRowid) as Conversation;
+  async create(ticketId: number, customerId: number): Promise<Conversation> {
+    const { data, error } = await getSupabase()
+      .from('conversations')
+      .insert({ ticket_id: ticketId, customer_id: customerId })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
   },
 
-  end(id: number): void {
-    const db = getDb();
-    db.prepare('UPDATE conversations SET ended_at = datetime(\'now\') WHERE id = ?').run(id);
+  async end(id: number): Promise<void> {
+    const { error } = await getSupabase()
+      .from('conversations')
+      .update({ ended_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw new Error(error.message);
   },
 };

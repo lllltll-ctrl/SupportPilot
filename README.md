@@ -7,7 +7,7 @@ AI-powered customer support operations center where AI acts as an operational as
 | Layer | Technology |
 |-------|-----------|
 | Frontend | Next.js 16, React 19, Tailwind CSS 4, shadcn/ui, Recharts |
-| Backend | Next.js API Routes, better-sqlite3 (SQLite) |
+| Backend | Next.js API Routes, Supabase (PostgreSQL) |
 | AI | Claude (Anthropic API) with tool_use, token-by-token streaming |
 | State | Zustand (immutable patterns) |
 | Testing | Vitest (unit/integration), Playwright (E2E) |
@@ -48,6 +48,7 @@ AI-powered customer support operations center where AI acts as an operational as
 ### Prerequisites
 - Node.js 18+
 - Anthropic API key ([console.anthropic.com](https://console.anthropic.com))
+- Supabase project ([supabase.com](https://supabase.com))
 
 ### 1. Install dependencies
 
@@ -56,28 +57,34 @@ cd support-pilot
 npm install
 ```
 
-### 2. Configure API key
+### 2. Set up Supabase database
+
+1. Create a new project at [supabase.com](https://supabase.com)
+2. Go to **SQL Editor** and run the schema SQL to create tables, views, functions, and seed data (see `docs/TECHNICAL_DOC.md` for schema details)
+
+### 3. Configure environment
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
 
-Edit `.env.local` and add your key:
+Edit `.env`:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-DATABASE_PATH=./data/support.db
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-### 3. Start development server
+Find the Supabase URL and service role key in **Settings → API** in your Supabase dashboard.
+
+### 4. Start development server
 
 ```bash
 npm run dev
 ```
 
-The database is auto-seeded on first request — no manual seed step required.
-
-### 4. Open in browser
+### 5. Open in browser
 
 | Page | URL |
 |------|-----|
@@ -128,7 +135,7 @@ src/
 ├── lib/
 │   ├── ai/              # AI engine (tools, prompts, executor, client, context assembler)
 │   │   └── __tests__/   # Unit tests for AI tools and executor
-│   └── db/              # SQLite schema, connection, repositories, seed data
+│   └── db/              # Supabase client, repositories
 │       └── __tests__/   # Repository integration tests
 └── stores/              # Zustand state management (chat, dashboard)
 ```
@@ -144,12 +151,11 @@ src/
 | `npm run test:watch` | Run tests in watch mode |
 | `npm run e2e` | Run E2E tests (Playwright) |
 | `npm run e2e:ui` | Run E2E tests with UI |
-| `npm run db:seed` | Seed database with demo data |
 | `npm run lint` | Lint code |
 
 ## Testing
 
-48 tests across 4 test suites:
+45 tests across 4 test suites:
 
 - **AI tool definitions** — schema validation, confirmation flags
 - **System prompt** — context injection, persona consistency

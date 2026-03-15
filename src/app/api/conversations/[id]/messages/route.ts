@@ -1,9 +1,6 @@
 import { NextRequest } from 'next/server';
 import { messageRepository } from '@/lib/db/repositories/message.repository';
 import { conversationRepository } from '@/lib/db/repositories/conversation.repository';
-import { seedDatabase } from '@/lib/db/seed';
-
-seedDatabase();
 
 export async function POST(
   req: NextRequest,
@@ -19,12 +16,12 @@ export async function POST(
       return Response.json({ error: 'Message content is required' }, { status: 400 });
     }
 
-    const conversation = conversationRepository.findById(conversationId);
+    const conversation = await conversationRepository.findById(conversationId);
     if (!conversation) {
       return Response.json({ error: 'Conversation not found' }, { status: 404 });
     }
 
-    const message = messageRepository.create({
+    const message = await messageRepository.create({
       conversation_id: conversation.id,
       role: 'agent',
       content: content.trim(),

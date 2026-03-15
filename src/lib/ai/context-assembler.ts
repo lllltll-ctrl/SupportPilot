@@ -3,9 +3,9 @@ import { billingRepository } from '../db/repositories/billing.repository';
 import { ticketRepository } from '../db/repositories/ticket.repository';
 import type { Customer } from '../db/repositories/customer.repository';
 
-export function assembleCustomerContext(customer: Customer): string {
-  const billing = billingRepository.findByCustomerId(customer.id, 10);
-  const tickets = ticketRepository.findByCustomerId(customer.id, 5);
+export async function assembleCustomerContext(customer: Customer): Promise<string> {
+  const billing = await billingRepository.findByCustomerId(customer.id, 10);
+  const tickets = await ticketRepository.findByCustomerId(customer.id, 5);
 
   const billingLines = billing.map(b =>
     `  - ${b.created_at.split('T')[0]}: ${b.type === 'refund' ? 'REFUND' : 'CHARGE'} $${b.amount.toFixed(2)} — ${b.description}`
@@ -30,6 +30,6 @@ ${billingLines || '  No billing records found.'}
 ${ticketLines || '  No previous tickets.'}`;
 }
 
-export function findCustomerByEmail(email: string) {
+export async function findCustomerByEmail(email: string) {
   return customerRepository.findByEmail(email);
 }

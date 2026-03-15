@@ -19,7 +19,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 .env
-.env.local
 .vercel
 data/*.db
 data/*.db-wal

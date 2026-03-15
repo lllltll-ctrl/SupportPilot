@@ -1,4 +1,4 @@
-import { getDb } from '../connection';
+import { getSupabase } from '../connection';
 
 export interface BillingRecord {
   readonly id: number;
@@ -10,45 +10,54 @@ export interface BillingRecord {
 }
 
 export const billingRepository = {
-  findByCustomerId(customerId: number, limit = 20): BillingRecord[] {
-    const db = getDb();
-    return db.prepare(
-      'SELECT * FROM billing_history WHERE customer_id = ? ORDER BY created_at DESC LIMIT ?'
-    ).all(customerId, limit) as BillingRecord[];
+  async findByCustomerId(customerId: number, limit = 20): Promise<BillingRecord[]> {
+    const { data, error } = await getSupabase()
+      .from('billing_history')
+      .select('*')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return data ?? [];
   },
 
-  findById(id: number): BillingRecord | undefined {
-    const db = getDb();
-    return db.prepare('SELECT * FROM billing_history WHERE id = ?').get(id) as BillingRecord | undefined;
+  async findById(id: number): Promise<BillingRecord | undefined> {
+    const { data, error } = await getSupabase()
+      .from('billing_history')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ?? undefined;
   },
 
-  createRefund(customerId: number, amount: number, reason: string): BillingRecord {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO billing_history (customer_id, amount, description, type) VALUES (?, ?, ?, ?)'
-    ).run(customerId, amount, `Refund: ${reason}`, 'refund');
-    return {
-      id: result.lastInsertRowid as number,
-      customer_id: customerId,
-      amount,
-      description: `Refund: ${reason}`,
-      type: 'refund',
-      created_at: new Date().toISOString(),
-    };
+  async createRefund(customerId: number, amount: number, reason: string): Promise<BillingRecord> {
+    const { data, error } = await getSupabase()
+      .from('billing_history')
+      .insert({
+        customer_id: customerId,
+        amount,
+        description: `Refund: ${reason}`,
+        type: 'refund',
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
   },
 
-  createCharge(customerId: number, amount: number, description: string): BillingRecord {
-    const db = getDb();
-    const result = db.prepare(
-      'INSERT INTO billing_history (customer_id, amount, description, type) VALUES (?, ?, ?, ?)'
-    ).run(customerId, amount, description, 'charge');
-    return {
-      id: result.lastInsertRowid as number,
-      customer_id: customerId,
-      amount,
-      description,
-      type: 'charge',
-      created_at: new Date().toISOString(),
-    };
+  async createCharge(customerId: number, amount: number, description: string): Promise<BillingRecord> {
+    const { data, error } = await getSupabase()
+      .from('billing_history')
+      .insert({
+        customer_id: customerId,
+        amount,
+        description,
+        type: 'charge',
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
   },
 };
