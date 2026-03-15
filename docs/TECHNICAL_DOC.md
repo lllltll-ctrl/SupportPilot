@@ -484,3 +484,17 @@ Dashboard KPI cards show real week-over-week trends:
 - `getWeekOverWeekTrends()` compares this week vs last week
 - Metrics: ticket volume, resolution rate, resolution time, satisfaction
 - Positive/negative indicators with percentage change
+
+## 14. Deployment
+
+The application is deployed on **Vercel** with Supabase as the managed PostgreSQL database.
+
+**Live URL:** https://support-pilot-wheat.vercel.app
+
+| Page | URL |
+|------|-----|
+| Customer Chat | https://support-pilot-wheat.vercel.app/chat |
+| Agent Dashboard | https://support-pilot-wheat.vercel.app/dashboard |
+| Analytics | https://support-pilot-wheat.vercel.app/dashboard/analytics |
+| Live Conversations | https://support-pilot-wheat.vercel.app/dashboard/live |
+| Ticket Queue | https://support-pilot-wheat.vercel.app/dashboard/tickets |

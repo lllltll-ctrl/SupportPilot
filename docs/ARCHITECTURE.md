@@ -111,6 +111,12 @@ src/
   stores/                       # Zustand stores
 ```
 
+## Deployment
+
+- **Hosting:** Vercel (https://support-pilot-wheat.vercel.app)
+- **Database:** Supabase (managed PostgreSQL)
+- **Environment variables:** configured in Vercel dashboard
+
 ## Key Design Decisions
 1. **Supabase (PostgreSQL)** — managed cloud DB, Vercel-compatible, views and RPC functions for complex queries
 2. **SSE over WebSockets** — simpler, sufficient for streaming

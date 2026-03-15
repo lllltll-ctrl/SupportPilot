@@ -2,6 +2,18 @@
 
 AI-powered customer support operations center where AI acts as an operational assistant — not just a chatbot. It understands intent, executes real actions, and helps support teams make better decisions.
 
+## Live Demo
+
+**https://support-pilot-wheat.vercel.app**
+
+| Page | URL |
+|------|-----|
+| Customer Chat | https://support-pilot-wheat.vercel.app/chat |
+| Agent Dashboard | https://support-pilot-wheat.vercel.app/dashboard |
+| Analytics | https://support-pilot-wheat.vercel.app/dashboard/analytics |
+| Live Conversations | https://support-pilot-wheat.vercel.app/dashboard/live |
+| Ticket Queue | https://support-pilot-wheat.vercel.app/dashboard/tickets |
+
 ## Tech Stack
 
 | Layer | Technology |
